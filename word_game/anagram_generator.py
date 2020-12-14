@@ -68,7 +68,7 @@ def main():
         exit()
 
     results = get_anagrams(sys.argv[1], sys.argv[2])
-    print("found {} words: \n{}".format(len(results), results))
+    print("found {} words: \n{}".format(len(results), sorted(results)))
 
 
 if __name__ == "__main__":
