@@ -136,47 +136,40 @@ def _debug_print(scr, string):
 
 def main(stdscr):
     # Make sure terminal is big enough (curses is fussy)
+    # Wrapper disabled our output so turn that back on for now
+    curses.echo()
     term_size = os.get_terminal_size()
     if term_size[0] < 36 or term_size[1] < 22:
-        pass####
+        sys.exit("I'm feeling a little claustrophobic...\n"
+              "Curses needs a bigger terminal window to display properly.\n")
 
     filename = ""
     chars = ""
     min_chars = 4
-    if len(sys.argv) == 3:
+    if len(sys.argv) == 2:
+        # Pick some random chars
+        iwhjdiojqfoiqjdoiqjo
+    elif len(sys.argv) == 3:
         # User passed both filename and chars as params
         filename = sys.argv[1]
         chars = sys.argv[2]
     elif len(sys.argv) == 4:
         filename = sys.argv[1]
         chars = sys.argv[2]
-        min_chars = int(sys.argv[3])
-    elif len(sys.argv) == 1:
-        # Get json file and chars from user; anagram generator handles errors
-        filename = input("Please enter the file location of a json-formatted "
-                         "word dictionary.\n")
-
-        chars = input("Please enter some characters. The first character is "
-                      "guaranteed to appear in every word.\n")
-        min_chars = input("Please enter the minimum word size that should be "
-                          "considered in the dictionary (default 4).")
-        if min_chars == '':
-            min_chars = 4
-        else:
-            min_chars = int(min_chars)
+        try:
+            min_chars = int(sys.argv[3])
+        except ValueError:
+            sys.exit("Need a number for min_chars: found {}".format(min_chars))
     else:
-        print("Bad arguments. Use with either:"
-              "'python3 {} <json file> <chars>',\n"
-              "'python3 {} <json file> <chars> <min word size>,\n"
-              "or just 'python3 {}'."\
-              .format(sys.argv[0], sys.argv[0], sys.argv[0]))
-        exit()
-        
+        sys.exit("Hi! Thanks for trying my game. Run it with either: \n"
+              "  'python3 {} <json file> <chars>', or\n"
+              "  'python3 {} <json file> <chars> <min word size>'.\n"
+              .format(sys.argv[0], sys.argv[0]))
+    
+    curses.noecho()
+
     require_char = chars[0]
     chars = ''.join(sorted(list(set(chars))))
-
-    # Get dictionary file and specified characters from user
-    #print("Loading...", end="")
 
     # Set up window lookin' nice (curses)
     stdscr.clear()
@@ -263,6 +256,10 @@ def main(stdscr):
         # Blocking wait for user to type a word (and hit enter)
         user_input = _get_input(stdscr, input_box_y+1,\
                                 input_box_x+1, input_box_w-2)
+
+        # Check if user used bad letters
+        bad_letters = set([x for x in user_input if x not in chars])
+
         # Check if we recognize that word
         if user_input in words and user_input not in found_words:
             found_words.append(user_input)
@@ -276,6 +273,12 @@ def main(stdscr):
             stdscr.addstr(message_y, message_x, "You already got that one!")
             stdscr.refresh()
             guess = False
+        elif bad_letters:
+            stdscr.addstr(message_y, message_x, " " * message_w)
+            stdscr.addstr(message_y, message_x, "Bad letters: {}"\
+                          .format("".join(bad_letters)))
+            stdscr.refresh()
+            guess = False
         else:
             stdscr.addstr(message_y, message_x, " " * message_w)
             stdscr.addstr(message_y, message_x, "Wrong: {}".format(user_input))
@@ -285,4 +288,6 @@ def main(stdscr):
 
 if __name__ == "__main__":
     # Curses wrapper to make things a little easier on myself
+    print("test")
     wrapper(main)
+
