@@ -1,20 +1,17 @@
 import sys
 import os
 import curses
+import json
 from curses import wrapper, ascii
-from anagram_generator import get_anagrams
+from anagram_generator import get_anagrams, load_json_dict
+
+import word_game_classes
 
 """
 This is a word-guessing game, where you must guess all of the words that can be
     made from a specified number of characters, with one "special" character
     that is guaranteed to be in every word.
 """
-
-def _addstr_center_h(scr, line, text):
-    """
-    Add horizontally-centered text.
-    """
-    scr.addstr(line, scr.getmaxyx()[1]//2 - len(text)//2, text)
 
 
 def _draw_box(scr, y, x, h, w):
@@ -34,6 +31,16 @@ def _draw_box(scr, y, x, h, w):
     scr.addch(y+h-1, x+w-1, curses.ACS_LRCORNER)
 
 
+def _clear_box(scr, y, x, h, w):
+    """
+    Clear an ascii box (a hollow rectangle) with width w and height h.
+    """
+    scr.hline(y, x, curses.ascii.SP, w)
+    scr.vline(y+1, x, curses.ascii.SP, h-2)
+    scr.vline(y+1, x+w-1, curses.ascii.SP, h-2) 
+    scr.hline(y+h-1, x, curses.ascii.SP, w)
+
+
 def _fill_rect(scr, y, x, h, w, char):
     """
     Fill a rectangular area with a given character.
@@ -41,7 +48,8 @@ def _fill_rect(scr, y, x, h, w, char):
     for _y in range(h-y):
         for _x in range(w-x):
             scr.addch(_y + y, _x + x, char)
-
+#TODO make into a class for storing state, allow for blocking loop outside
+#   of scope, i.e. pass char into this function
 def _get_input(scr, y, x, in_len):
     """
     Allow the user to type in the input box. Return the string they typed.
@@ -90,7 +98,6 @@ def _print_in_rect(scr, y, x, h, w, words):
     # Position to print next word
     cx = 0
     cy = 0
-    import time
     for word in words:
         # Check if printing this would run off the bottom
         if cy >= h:
@@ -122,69 +129,157 @@ def _print_in_rect(scr, y, x, h, w, words):
             scr.addstr(y+cy, x+cx, word+", ")
             cx += len(word)+2
 
-        #42x24 aeiosu
-        #_debug_print(scr,"cx: {}, cy: {}, x: {}, y: {}, w: {}, h: {}"\
-        #        .format(cx, cy, x, y, w, h))
-
-        #time.sleep(1)
-        #scr.refresh()
-
 
 def _debug_print(scr, string):
     scr.addstr(0,0, "("+string+")")
 
 
 def main(stdscr):
+    if len(sys.argv) != 2:
+        sys.exit("\n\nHi! Thanks for trying my game. In order to play it, you "
+                 "need a dictionary file in json format. Run as follows:\n"
+                 "  'python3 {} <json dictionary>'\n\n".format(sys.argv[0]))
+
     # Make sure terminal is big enough (curses is fussy)
-    # Wrapper disabled our output so turn that back on for now
-    curses.echo()
     term_size = os.get_terminal_size()
     if term_size[0] < 36 or term_size[1] < 22:
-        sys.exit("I'm feeling a little claustrophobic...\n"
+        sys.exit("Error: I'm feeling a little claustrophobic...\n"
               "Curses needs a bigger terminal window to display properly.\n")
 
-    filename = ""
-    chars = ""
-    min_chars = 4
-    if len(sys.argv) == 2:
-        # Pick some random chars
-        iwhjdiojqfoiqjdoiqjo
-    elif len(sys.argv) == 3:
-        # User passed both filename and chars as params
-        filename = sys.argv[1]
-        chars = sys.argv[2]
-    elif len(sys.argv) == 4:
-        filename = sys.argv[1]
-        chars = sys.argv[2]
-        try:
-            min_chars = int(sys.argv[3])
-        except ValueError:
-            sys.exit("Need a number for min_chars: found {}".format(min_chars))
-    else:
-        sys.exit("Hi! Thanks for trying my game. Run it with either: \n"
-              "  'python3 {} <json file> <chars>', or\n"
-              "  'python3 {} <json file> <chars> <min word size>'.\n"
-              .format(sys.argv[0], sys.argv[0]))
-    
-    curses.noecho()
+    filename = sys.argv[1]
+    try:
+        with open(filename) as f:
+            jd = set(json.loads(f.read()))
+            if not jd:
+                sys.exit("Error: '{}' is not a valid dictionary."\
+                            .format(filename))
+    except IOError:
+        sys.exit("Error: could not open (or perhaps find) file '{}'."\
+                    .format(filename))
 
-    require_char = chars[0]
-    chars = ''.join(sorted(list(set(chars))))
 
     # Set up window lookin' nice (curses)
     stdscr.clear()
     stdscr.border(0)
-
-    _addstr_center_h(stdscr, 1, "Adam's Word Game")
+    tmp = "Adam's Word Game"
+    stdscr.addstr(1, curses.COLS//2-len(tmp)//2, tmp)
     stdscr.hline(2, 1, curses.ACS_HLINE, curses.COLS-2)
+
+    # Show user settings screen
+    chars, min_chars = _settings(stdscr)
+
+    # Show something instead of hanging while getting words
     stdscr.addstr(3, 1, "Loading...")
     stdscr.refresh()
     words = get_anagrams(filename, chars)
-
     # Just take out any words that are shorter than min chars
     words = [word for word in words if len(word) >= min_chars]
 
     stdscr.addstr(3, 1, " "*10) # clear loading
+
+    # Start the game
+    _game(stdscr, chars, words)
+
+def _settings(stdscr):
+    """
+    Display settings window to user so that they can choose to play with:
+        either random chars (and how many), or specific chars (and which ones),
+        as well as choose the minimum accepted word length.
+
+    Return a tuple of (chars, min word size).
+    """
+    h_center = curses.COLS // 2
+
+    tmp = "Navigate with the arrow keys."
+    stdscr.addstr(3, h_center-len(tmp)//2, tmp)
+
+    # Display instructions to start game
+    start_text = "Press enter to begin the game!"
+    start_text_y = curses.LINES-2
+    start_text_x = h_center-len(start_text)//2
+    stdscr.addstr(start_text_y, start_text_x, start_text)
+
+    # Let user pick from playing with random chars or choosing their own
+    tmp = "Would you like to play with:"
+    tmp1 = "Random letters"
+    tmp2 = "Choose my own"
+    
+    # box widths + ' or ' + 2 pad
+    rand_or_choose_h = 6
+    rand_or_choose_w = len(tmp1)+2 + len(tmp2)+2 + 4 + 2
+    rand_or_choose_y = 4
+    rand_or_choose_x = h_center - rand_or_choose_w//2
+    # Draw box around whole selection group
+    _draw_box(stdscr, rand_or_choose_y, rand_or_choose_x,\
+                      rand_or_choose_h, rand_or_choose_w+2)
+    tmp_s_y = rand_or_choose_y + 2
+    tmp_s1_x = rand_or_choose_x + 2
+    tmp_s2_x = tmp_s1_x + len(tmp1)+2 + 4
+    tmp_s1 = (tmp_s_y, tmp_s1_x, tmp1)
+    tmp_s2 = (tmp_s_y, tmp_s2_x, tmp2)
+
+    stdscr.addstr(rand_or_choose_y+1, h_center-len(tmp)//2, tmp)
+    stdscr.addstr(tmp_s_y+1, tmp_s1_x+1, tmp1)
+    stdscr.addstr(tmp_s_y+1, tmp_s2_x-4, " or ")
+    stdscr.addstr(tmp_s_y+1, tmp_s2_x+1, tmp2)
+
+    rand_choose_letters_sel = _MultipleSelection(stdscr,[tmp_s1, tmp_s2])
+
+    #TODO figure out how big needs to be for all 3 selection windows
+    _draw_box(stdscr, rand_or_choose_y+6, rand_or_choose_x, 6, rand_or_choose_w+2)
+    _draw_box(stdscr, rand_or_choose_y+12, rand_or_choose_x, 6, rand_or_choose_w+2)
+
+    
+    # Store data for selection group to select number of random letters
+    count_selection_range = range(2,10)
+
+    # space for vertical lines around numbers
+    random_letter_count_w = len(count_selection_range)*2+1
+    random_letter_count_y = rand_or_choose_y + rand_or_choose_h
+    random_letter_count_x = h_center - (len("How many letters?")+2)//2 #+2 pad
+    # Generate tuples for this multiple selection (y, x, item)
+    tmp_s = list(zip(\
+        [random_letter_count_y+1]*len(count_selection_range),\
+        [i+random_letter_count_x for i in range(len(count_selection_range))],\
+        [str(i) for i in count_selection_range]))
+
+    random_letter_count_sel = _MultipleSelection(stdscr, tmp_s)
+
+    # Show different view depending on user choice of random or not
+    def show_random_letter_count_selection():
+        # Re-draw text
+        tmp = "How many letters?"
+        pass
+
+    def show_letter_choice_selection():
+        tmp = "Enter them here:"
+        
+        pass
+
+    # Show this one by default
+    show_random_letter_count_selection()
+
+    sel_groups = [rand_choose_letters_sel, random_letter_count_sel]
+    cur_group_i = 0
+    while True:
+        c = stdscr.getch(0,0)
+        if c == curses.ascii.NL:
+            stdscr.addstr(start_text_y, start_text_x, " "*len(start_text))
+            break
+        elif c == curses.KEY_LEFT or c == curses.KEY_RIGHT:
+            if sel_groups[cur_group_i] == rand_choose_letters_sel:
+                sel_groups[cur_group_i].change_selection(stdscr, c)
+
+        elif c == curses.KEY_UP:
+            cur_group_i = (cur_group_i - 1) % len(sel_groups)
+        elif c == curses.KEY_DOWN:
+            cur_group_i = (cur_group_i + 1) % len(sel_groups)
+
+    return ("abcde", 4) #TODO
+
+def _game(stdscr, chars, words):
+    require_char = chars[0]
+    chars = ''.join(sorted(list(set(chars))))
 
     #TEST
     #stdscr.addstr(3, curses.COLS//4, "|")
@@ -288,6 +383,5 @@ def main(stdscr):
 
 if __name__ == "__main__":
     # Curses wrapper to make things a little easier on myself
-    print("test")
     wrapper(main)
 
