@@ -3,7 +3,7 @@ This is word-guessing game, where you are given a few letters along with
 one required letter to make into words. 
 
 To play it, you need a dictionary file in json format. You can find one of
-those [here](https://github.com/dwyl/english-words/blob/master/words_dictionary.json). Run it with "python3 word\_game.py /<dict file/>".
+those [here](https://github.com/dwyl/english-words/blob/master/words_dictionary.json). Run it with "python3 word\_game.py \<dict file\>".
 
 You can customise the game a bit with a settings menu, or just hit
 enter right away to begin the game with default settings. If you choose your
