@@ -22,17 +22,15 @@ def get_anagrams(dict_file, chars):
     """
 
     if not chars.isalpha():
-        print("You didn't only enter characters and now I must die")
-        exit()
+        sys.exit("get_anagrams: bad value for chars '{}'".format(chars))
 
-    words = _load_words(dict_file)
+    words = load_json_dict(dict_file)
 
     if not words:
-        print("No words found in given dictionary file.")
-        exit()
+        sys.exit("No words found in given dictionary file.")
 
     # Store all words in dictionary as {"sorted letters": [matching words]} pairs.
-    word_dict = defaultdict(list)  # dict of [sorted letters in word]: word
+    word_dict = defaultdict(list)  # dict of [sorted letters in word]: [words]
     for word in words:
         word_dict["".join(sorted(word))].append(word)
 
@@ -49,7 +47,7 @@ def get_anagrams(dict_file, chars):
     return results
 
 
-def _load_words(filename):
+def load_json_dict(filename):
     """
     Parse and return the contents of a dictionary file in json format
     """
@@ -58,14 +56,13 @@ def _load_words(filename):
             valid_words = set(json.loads(word_file.read()))
             return valid_words
     except IOError:
-        print("Could not open file '{}'.".format(filename))
-        exit()
+        sys.exit("Could not open file '{}'.".format(filename))
 
 
 def main():
     if len(sys.argv) != 3:
-        print("Bad arguments. Usage: {} <dict file> <chars>\n".format(sys.argv[0]))
-        exit()
+        sys.exit("Bad arguments. Usage: {} <dict file> <chars>\n"\
+                     .format(sys.argv[0]))
 
     results = get_anagrams(sys.argv[1], sys.argv[2])
     print("found {} words: \n{}".format(len(results), sorted(results)))
